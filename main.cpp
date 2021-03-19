@@ -1,24 +1,42 @@
 #include <iostream>
+#include <fstream>
+#include <filesystem>
 #include <clang/Tooling/CommonOptionsParser.h>
 #include <llvm/Support/CommandLine.h>
 
-// Apply a custom category to all command-line options so that they are the
-// only ones displayed.
-static llvm::cl::OptionCategory MyToolCategory("my-tool options");
+const llvm::ExitOnError ExitOnErr;
+static llvm::cl::OptionCategory CddCategory("Compiler Driven Development (CDD) options");
+
 
 int main(int argc, const char **argv) {
-    // CommonOptionsParser constructor will parse arguments and create a
-    // CompilationDatabase.  In case of error it will terminate the program.
-    llvm::Expected<clang::tooling::CommonOptionsParser> OptionsParserMaybe = clang::tooling::CommonOptionsParser::create (argc, argv, MyToolCategory);
-    if (auto Err = OptionsParserMaybe.takeError()) {
-        std::cerr << Err.dynamicClassID();
-        return EXIT_FAILURE;
-    }
-    auto &OptionsParser = OptionsParserMaybe;
-    for (const auto& filename : OptionsParser->getCompilations().getAllFiles())
-        std::cout << "filename:\t" << filename << "\n";
-    std::cout << std::flush;
+    enum Emit {
+        OatModel, OatRoute
+    };
 
-    // Use OptionsParser.getCompilations() and OptionsParser.getSourcePathList()
-    // to retrieve CompilationDatabase and the list of input file paths.
+    const llvm::cl::opt<Emit> EmitOption(llvm::cl::desc("Emit one of:"),
+                                         llvm::cl::values(
+                                                 clEnumVal(OatModel, "Produce Oat++ Model(s)"),
+                                                 clEnumVal(OatRoute, "Produce Oat++ route(s)")),
+                                                 llvm::cl::cat(CddCategory));
+    const llvm::cl::opt<std::string> OutputFilename("o", llvm::cl::desc("Specify output filename"),
+                                                    llvm::cl::value_desc("filename"),
+                                                    llvm::cl::cat(CddCategory));
+    clang::tooling::CommonOptionsParser OptionsParser = ExitOnErr(
+            clang::tooling::CommonOptionsParser::create (argc, argv, CddCategory));
+    for (const std::string& filename : OptionsParser.getCompilations().getAllFiles())
+        std::cout << "filename:\t" << filename << "\n";
+    if (std::filesystem::is_regular_file(OutputFilename.c_str())) {
+        std::cerr << "-o refers to an existent file, merging is currently NotImplemented. "
+                     "Specify an alternative file, or delete/move the specified: '"
+                  << OutputFilename << "'" << std::endl;
+        return 2;
+    }
+    {
+        const std::ofstream Output(OutputFilename.c_str(), std::ios::out);
+        if (Output.good()) {
+            std::cout << "Opened: '" << OutputFilename << "'" << std::endl;
+        }
+    }
+    // std::ofstream::close(Output);
+    std::cout << std::flush;
 }
